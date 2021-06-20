@@ -26,15 +26,14 @@
 
 import glob
 import os
+os.environ["SDL_VIDEODRIVER"] = "dummy"
 import sys
 import math
 import random
 
 try:
-    sys.path.append(glob.glob('../../carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+    sys.path.append('../carla/dist/carla-0.9.10-py3.7-linux-x86_64.egg')
+
 except IndexError:
     pass
 
@@ -189,10 +188,10 @@ class CarlaGame():
         self.font = get_font()
         self.clock = pygame.time.Clock()
         
-        self.client = carla.Client('localhost', 2000)
+        self.client = carla.Client('10.151.176.32', 2000)
         self.client.set_timeout(30.0)
         
-        self.world = self.client.load_world(cfg.CARLA_TOWN)
+        self.world = self.client.get_world()
         self.map = self.world.get_map()
         
         # Hide all objects on the map and show street only
@@ -208,15 +207,7 @@ class CarlaGame():
             self.camera_transforms = [carla.Transform(carla.Location(x=-4.5, z=2.2), carla.Rotation(pitch=-14.5)),
                                       carla.Transform(carla.Location(x=-4.0, z=2.2), carla.Rotation(pitch=-18.0))]
         else:
-            self.camera_transforms = [carla.Transform(carla.Location(x=0.0, z=3.2), carla.Rotation(pitch=-19.5)), # camera 1
-                                      carla.Transform(carla.Location(x=0.0, z=2.8), carla.Rotation(pitch=-18.5)), # camera 2
-                                      carla.Transform(carla.Location(x=0.3, z=2.4), carla.Rotation(pitch=-15.0)), # camera 3
-                                      carla.Transform(carla.Location(x=1.1, z=2.0), carla.Rotation(pitch=-16.5)), # camera 4
-                                      carla.Transform(carla.Location(x=1.0, z=2.0), carla.Rotation(pitch=-18.5)), # camera 5
-                                      carla.Transform(carla.Location(x=1.4, z=1.2), carla.Rotation(pitch=-13.5)), # camera 6
-                                      carla.Transform(carla.Location(x=1.8, z=1.2), carla.Rotation(pitch=-14.5)), # camera 7
-                                      carla.Transform(carla.Location(x=2.17, z=0.9), carla.Rotation(pitch=-14.5)), # camera 8
-                                      carla.Transform(carla.Location(x=2.2, z=0.7), carla.Rotation(pitch=-11.5))] # camera 9   
+            self.camera_transforms = [carla.Transform(carla.Location(x=0.0, z=1.2), carla.Rotation(pitch=-18.5))] # camera 1   
         
 
     def reset_vehicle_position(self):
@@ -262,19 +253,24 @@ class CarlaGame():
             new_waypoint: carla.Waypoint. Calculate all the lanemarkings based on the new_waypoint, which is the last element from the waypoint_list.
             image_semseg: numpy array. Filter lanepoints with semantic segmentation camera. 
         """
+        sel_cam = self.camera_rgb.get_transform().location
+
         lanes_list = []      # filtered 2D-Points
         x_lanes_list = []    # only x values of lanes
+        selcam_posotion = []
         lanes_3Dcoords = self.lanemarkings.calculate3DLanepoints(self.client, new_waypoint)
-        
+
         for lane_3Dcoords in lanes_3Dcoords:
             lane = self.lanemarkings.calculate2DLanepoints(self.camera_rgb, lane_3Dcoords)
             lane = self.lanemarkings.calculateYintersections(lane)
             lane = self.lanemarkings.filter2DLanepoints(lane, image_semseg)
             lanes_list.append(lane)
-
+            selcam_posotion.append()
             x_lanes_list.append(self.lanemarkings.format2DLanepoints(lane))
-        
-        return lanes_list, x_lanes_list
+
+            rel_3Dlane_list.append(lane_3Dcoords)
+
+        return lanes_list, x_lanes_list, lanes_3Dcoords
 
     
     def render_display(self, image, image_semseg, lanes_list, render_lanes=True):
@@ -301,7 +297,7 @@ class CarlaGame():
         self.display.blit(self.font.render('Dataset % 2d ' % self.imagesaver.reset_count, True, (255, 255, 255)), (20, 30))
         self.display.blit(self.font.render('Map: ' + cfg.CARLA_TOWN, True, (255, 255, 255)), (20, 50))
         
-        pygame.display.flip()
+        # pygame.display.flip()
         
 
     def execute(self):
@@ -393,7 +389,7 @@ class CarlaGame():
         image_semseg = reshape_image(image_semseg)
         
         # Calculate all the lanes with the helper class 'LaneMarkings'
-        lanes_list, x_lanes_list = self.detect_lanemarkings(new_waypoint, image_semseg)
+        lanes_list, x_lanes_list, ThreeD_lines_list= self.detect_lanemarkings(new_waypoint, image_semseg)
         
         # Draw all 3D lanes in carla simulator
         if cfg.draw3DLanes:
@@ -408,6 +404,9 @@ class CarlaGame():
             if((not cfg.junctionMode and self.vehiclemanager.junctionInSightCounter <= 0) or cfg.junctionMode):
                 self.imagesaver.add_image(image_rgb.raw_data, 'CameraRGB')
                 self.labelsaver.add_label(x_lanes_list)
+                self.labelsaver.add_label(lanes_list)
+                # self.labelsaver.add_label(ThreeD_lines_list)
+                self.labelsaver.add_label(self.camera_rgb.transform.location)
                 self.image_counter += 1
                 if(self.image_counter % cfg.images_until_respawn == 0):
                     self.reset_vehicle_position()
@@ -469,13 +468,10 @@ class VehicleManager():
                 if res:
                     junction_argument = res[0] < number_of_lanepoints - 15
                 else:
-                    junction_argument = False
+                    junct
 
-                offset = 0
-            # Junctions are not included in the set of trainingsdata, so we jump over every picture where a junction is in sight 
-            if junction_argument:
-                self.junctionInSightCounter = number_of_lanepoints - 20 + offset
-            else:
+
+
                 self.junctionInSightCounter -= 1 
             
     
